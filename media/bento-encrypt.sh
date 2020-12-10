@@ -27,11 +27,11 @@ mp4encrypt --method MPEG-CENC --key 2:624db3d757bb496fb93e51f341d11716:bf07e864e
 python .../utils/mp4-dash.py -f -o fragments sintel_trailer-720p-audio-fragmented-cenc.mp4
 python .../utils/mp4-dash.py -f -o fragments sintel_trailer-720p-video-fragmented-cenc.mp4
 
-# 删除 mv fragments/audio/und audio 和 mv fragments/video/avc1 video 建立的文件夹
+# 删除 mv fragments/audio/und/mp4a audio 和 mv fragments/video/avc1 video 建立的文件夹
 rm -rf audio
 rm -rf video
-# 重命名 fragments/audio/und 目录为 audio
-mv fragments/audio/und audio
+# 重命名 fragments/audio/und/mp4a 目录为 audio
+mv fragments/audio/und/mp4a audio
 # 重命名 fragments/video/avc1 目录为 video
 mv fragments/video/avc1 video
 # 删除 Bento4 生成的输出目录

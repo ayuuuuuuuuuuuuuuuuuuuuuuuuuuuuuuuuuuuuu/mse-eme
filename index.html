@@ -1,4 +1,4 @@
-﻿<!--
+<!--
 
 Copyright 2014, Mozilla Foundation and contributors
 
@@ -16,112 +16,103 @@ limitations under the License.
 
 -->
 <html>
-  <head>
-    <title>MSE + EME Demo</title>
-    <style>
-      #log {
-        font-size: small;
-      }
-      video {
-        max-width: 100%;
-      }
-      h1 {
-        font-family: arial;
-        font-size: large;
-      }
-    </style>
-    <script type="text/javascript" src="resources.js"></script>
-    <script type="text/javascript" src="eme.js"></script>
-    <script type="text/javascript" src="mse.js"></script>
-  </head>
-  <body>
-    <!--
-      <a href="https://github.com/cpearce/mse-eme"><img style="position: absolute; top: 0; right: 0; border: 0;" src="https://camo.githubusercontent.com/e7bbb0521b397edbd5fe43e7f760759336b5e05f/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f72696768745f677265656e5f3030373230302e706e67" alt="Fork me on GitHub" data-canonical-src="https://s3.amazonaws.com/github/ribbons/forkme_right_green_007200.png"></a>
-    -->
-    <h1>Media Source Extensions + ClearKey Encrypted Media Extension Demo</h1>
 
-    <div><a href="https://github.com/cpearce/mse-eme">Fork it on github.</a></div>
-    <div>Video downloaded: <span id="videoProgress">0</span>%</div>
-    <div>Audio downloaded: <span id="audioProgress">0</span>%</div>
+<head>
+  <title>MSE + EME Demo</title>
+  <style>
+    #log {
+      font-size: small;
+    }
 
-    <video id="v" controls preload="auto">
-    </video>
-    <br>
-    <div id="log">
-    </div>
-    <script>
+    video {
+      max-width: 100%;
+    }
 
-      const KEYSYSTEM_TYPE = "org.w3.clearkey";
+    h1 {
+      font-family: arial;
+      font-size: large;
+    }
+  </style>
+  <!-- 工具函数 -->
+  <script type="text/javascript" src="utils.js"></script>
+  <!-- 资源的信息 -->
+  <script type="text/javascript" src="resources.js"></script>
+  <script type="text/javascript" src="eme.js"></script>
+  <script type="text/javascript" src="mse.js"></script>
+</head>
 
-      function Load() {
-        if (!navigator.requestMediaKeySystemAccess) {
-          log("EME API is not supported. Enable pref media.eme.enabled to true in about:config");
-          return;
-        }
+<body>
+  <h1>Media Source Extensions + ClearKey Encrypted Media Extension Demo</h1>
 
-        var video = e("v");
+  <div>Video downloaded: <span id="videoProgress">0</span>%</div>
+  <div>Audio downloaded: <span id="audioProgress">0</span>%</div>
 
-        // Log events dispatched to make debugging easier...
-        [ "canplay", "canplaythrough", "encrypted", "ended", "error", "loadeddata",
-          "loadedmetadata", "loadstart", "pause", "play", "playing", "progress",
-          "stalled", "suspend", "waiting",
-        ].forEach(function (e) {
-          v.addEventListener(e, function(event) {
-            log("EVENT: " + e);
-          }, false);
-        });
+  <video id="v" controls preload="auto">
+  </video>
+  <br>
+  <div id="log">
+  </div>
+  <script>
+    const KEYSYSTEM_TYPE = "org.w3.clearkey";
 
-        var options = [];
-        const audioContentType = 'audio/mp4; codecs="mp4a.40.2"'; // AAC-LC
-        const videoContentType = 'video/mp4; codecs="avc1.64001F"'; // High profile level 3.1
+    function Load() {
+      if (!preUseCheck()) return;
 
-        log('UA: "' + navigator.userAgent + '"');
-        if (typeof(MediaKeySystemAccess.prototype.getConfiguration) == "undefined") {
-          // Firefox 43 and earlier used a different style of defining configurations
-          // for navigator.requestMediaKeySystem that doesn't match the current spec.
-          log("Detected obsolete navigator.requestMediaKeySystem options style.");
-          options = [
-            {
-              initDataType: "cenc",
-              videoType: videoContentType,
-              audioType: audioContentType,
-            }
-          ];
-        } else {
-          options = [
-            {
-              initDataTypes: ["cenc"],
-              videoCapabilities: [{contentType: videoContentType}],
-              audioCapabilities: [{contentType: audioContentType}],
-            }
-          ];
-        }
+      const video = e("v");
 
-        SetupEME(video, KEYSYSTEM_TYPE, "video", keys, options);
+      dispatchEvents(video, 'index.html', VIDEO_EVENTS);
 
-        var ms = new MediaSource();
-        video.src = URL.createObjectURL(ms);
+      let options = [];
+      const audioContentType = 'audio/mp4; codecs="mp4a.40.2"'; // AAC-LC
+      const videoContentType = 'video/mp4; codecs="avc1.64001F"'; // High profile level 3.1
 
-        function downloadProgress(id) {
-          return function(percent) {
-            e(id).innerHTML = percent;
+      log('UA: "' + navigator.userAgent + '"');
+      if (typeof (MediaKeySystemAccess.prototype.getConfiguration) == "undefined") {
+        // 过时的
+        // Firefox 43 and earlier used a different style of defining configurations
+        // for navigator.requestMediaKeySystem that doesn't match the current spec.
+        log("Detected obsolete navigator.requestMediaKeySystem options style.");
+        options = [
+          {
+            initDataType: "cenc",
+            videoType: videoContentType,
+            audioType: audioContentType,
           }
-        }
+        ];
+      } else {
+        // 进到这里
+        options = [
+          {
+            initDataTypes: ["cenc"],
+            videoCapabilities: [{ contentType: videoContentType }],
+            audioCapabilities: [{ contentType: audioContentType }],
+          }
+        ];
+      }
+      SetupEME(video, KEYSYSTEM_TYPE, "index.html video", keys, options);
+      var ms = new MediaSource;
 
-        var SourceOpen = function () {
-          ms.removeEventListener("sourceopen", SourceOpen);
-          log(name + " sourceopen");
-          Promise.all([MSELoadTrack(videoFragments, videoContentType, ms, "video", downloadProgress("videoProgress")),
-                       MSELoadTrack(audioFragments, audioContentType, ms, "audio", downloadProgress("audioProgress"))])
-            .then(function(){log("All segments downloaded"); ms.endOfStream();});
-        }
+      var SourceOpen = function (e) {
+        ms.removeEventListener("sourceopen", SourceOpen);
+        log("sourceopen");
 
-        ms.addEventListener("sourceopen", SourceOpen);
-        video.addEventListener("canplay", function(){video.play();});
+        Promise.all([
+          MSELoadTrack(videoFragments, videoContentType, ms, "video", downloadProgress("videoProgress")),
+          MSELoadTrack(audioFragments, audioContentType, ms, "audio", downloadProgress("audioProgress"))
+        ])
+          .then(function () {
+            log("All segments downloaded"); ms.endOfStream(); // ms.endOfStream() 之后 ms.readyState 属性为ended 
+          });
       }
 
-      Load();
+      ms.addEventListener("sourceopen", SourceOpen);
+      video.src = URL.createObjectURL(ms);
+      video.addEventListener("canplay", function (s) { video.play(); });
+    }
 
-    </script>
-  </body>
+    Load();
+
+  </script>
+</body>
+
 </html>

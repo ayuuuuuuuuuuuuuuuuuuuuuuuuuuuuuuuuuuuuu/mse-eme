@@ -19,21 +19,19 @@ function e(id) {
 }
 
 function log(msg) {
-  var log_pane = e('log');
+  var log_pane = e("log");
   log_pane.appendChild(document.createTextNode(msg));
   log_pane.appendChild(document.createElement("br"));
 }
 
-function bail(message)
-{
-  return function(err) {
-    log(message + (err ? " " + err : ""));
-  }
+function fail(msg) {
+  return function (err) {
+    log(msg + (err ? " " + err : ""));
+  };
 }
 
-function ArrayBufferToString(arr)
-{
-  var str = '';
+function ArrayBufferToString(arr) {
+  var str = "";
   var view = new Uint8Array(arr);
   for (var i = 0; i < view.length; i++) {
     str += String.fromCharCode(view[i]);
@@ -41,8 +39,7 @@ function ArrayBufferToString(arr)
   return str;
 }
 
-function StringToArrayBuffer(str)
-{
+function StringToArrayBuffer(str) {
   var arr = new ArrayBuffer(str.length);
   var view = new Uint8Array(arr);
   for (var i = 0; i < str.length; i++) {
@@ -51,8 +48,7 @@ function StringToArrayBuffer(str)
   return arr;
 }
 
-function Base64ToHex(str)
-{
+function Base64ToHex(str) {
   var bin = window.atob(str.replace(/-/g, "+").replace(/_/g, "/"));
   var res = "";
   for (var i = 0; i < bin.length; i++) {
@@ -61,22 +57,26 @@ function Base64ToHex(str)
   return res;
 }
 
-function HexToBase64(hex)
-{
+function HexToBase64(hex) {
   var bin = "";
   for (var i = 0; i < hex.length; i += 2) {
     bin += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
   }
-  return window.btoa(bin).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  return window
+    .btoa(bin)
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
 }
 
 function UpdateSessionFunc(name, keys) {
-  return function(ev) {
+  return function (ev) {
+    // 该 message 事件回调函数执行两次的原因是 keys 有两条记录
     var msgStr = ArrayBufferToString(ev.message);
     log(name + " got message from CDM: " + msgStr);
     var msg = JSON.parse(msgStr);
     var outKeys = [];
-
+    
     for (var i = 0; i < msg.kids.length; i++) {
       var id64 = msg.kids[i];
       var idHex = Base64ToHex(msg.kids[i]).toLowerCase();
@@ -85,26 +85,26 @@ function UpdateSessionFunc(name, keys) {
       if (key) {
         log(name + " found key " + key + " for key id " + idHex);
         outKeys.push({
-          "kty":"oct",
-          "alg":"A128KW",
-          "kid":id64,
-          "k":HexToBase64(key)
+          kty: "oct",
+          alg: "A128KW",
+          kid: id64,
+          k: HexToBase64(key),
         });
       } else {
-        bail(name + " couldn't find key for key id " + idHex);
+        fail(name + " couldn't find key for key id " + idHex);
       }
     }
 
     var update = JSON.stringify({
-      "keys" : outKeys,
-      "type" : msg.type
+      keys: outKeys,
+      type: msg.type,
     });
     log(name + " sending update message to CDM: " + update);
 
-    ev.target.update(StringToArrayBuffer(update)).then(function() {
+    ev.target.update(StringToArrayBuffer(update)).then(function () {
       log(name + " MediaKeySession update ok!");
-    }, bail(name + " MediaKeySession update failed"));
-  }
+    }, fail(name + " MediaKeySession update failed"));
+  };
 }
 
 function KeysChange(event) {
@@ -115,54 +115,85 @@ function KeysChange(event) {
     var keyId = entry[0];
     var status = entry[1];
     var base64KeyId = Base64ToHex(window.btoa(ArrayBufferToString(keyId)));
-    log("SessionId=" + session.sessionId + " keyId=" + base64KeyId + " status=" + status);
+    log(
+      "SessionId=" +
+        session.sessionId +
+        " keyId=" +
+        base64KeyId +
+        " status=" +
+        status
+    );
   }
 }
 
 var ensurePromise;
 
-function EnsureMediaKeysCreated(video, keySystem, options, encryptedEvent) {
-  // We may already have a MediaKeys object if we initialized EME for a
-  // different MSE SourceBuffer's "encrypted" event, or the initialization
-  // may still be in progress.
+function EnsureMediaKeysCreated(
+  video,
+  keySystem,
+  options,
+  encryptedEvent,
+  name
+) {
+  // 执行了两次
+
+  // We may already have a MediaKeys object if we initialized EME for a different MSE SourceBuffer's "encrypted" event, or the initialization may still be in progress.
   if (ensurePromise) {
+    log(
+      `Already have a MediaKeys object === navigator.requestMediaKeySystemAccess(${JSON.stringify(
+        options
+      )})`
+    );
+    return ensurePromise;
+  } else {
+    log(`navigator.requestMediaKeySystemAccess(${JSON.stringify(options)})`);
+
+    // 以下代码只执行一次, 因为第二次直接返回了 ensurePromise 对象
+    ensurePromise = navigator
+      .requestMediaKeySystemAccess(keySystem, options)
+      .then(function (keySystemAccess) {
+        // log(`${name} ${JSON.stringify(keySystemAccess.getConfiguration())}`)
+        return keySystemAccess.createMediaKeys();
+      }, fail(name + " Failed to request key system access."))
+
+      .then(function (mediaKeys) {
+        // 实际在 loadedmetadata 事件触发后调用
+        log(name + " created MediaKeys object ok");
+        return video.setMediaKeys(mediaKeys); // 媒体元素可在播放期间将 mediaKeys 用于媒体数据的解密。
+      }, fail(name + " failed to create MediaKeys object"));
+
     return ensurePromise;
   }
-
-  log("navigator.requestMediaKeySystemAccess("+ JSON.stringify(options) + ")");
-
-  ensurePromise = navigator.requestMediaKeySystemAccess(keySystem, options)
-    .then(function(keySystemAccess) {
-      return keySystemAccess.createMediaKeys();
-    }, bail(name + " Failed to request key system access."))
-
-    .then(function(mediaKeys) {
-      log(name + " created MediaKeys object ok");
-      return video.setMediaKeys(mediaKeys);
-    }, bail(name + " failed to create MediaKeys object"))
-
-  return ensurePromise;
 }
 
-function SetupEME(video, keySystem, name, keys, options)
-{
+function SetupEME(video, keySystem, name, keys, options) {
   video.sessions = [];
 
-  video.addEventListener("encrypted", function(ev) {
-    log(name + " got encrypted event");
+  video.addEventListener("encrypted", function (ev) {
+    // 该事件在本例中执行了两次
+    // TODO: 思考 encrypted 事件触发两次的原因
+    log(
+      name + " got encrypted event"
+    );
 
-    EnsureMediaKeysCreated(video, keySystem, options, ev)
-    .then(function() {
+    EnsureMediaKeysCreated(video, keySystem, options, ev, name)
+      .then(function () {
+        // 实际在 loadedmetadata 事件触发后调用, 且调用了两次, 因为 encrypted 事件触发了两次
         log(name + " ensured MediaKeys available on HTMLMediaElement");
+        // session 对象表示用于与内容解密模块（CDM）进行消息交换的上下文
         var session = video.mediaKeys.createSession();
         video.sessions.push(session);
+        // 在 CDM 已为会话生成消息时调用
         session.addEventListener("message", UpdateSessionFunc(name, keys));
+        // 在会话中的键或其状态发生更改时调用
         session.addEventListener("keystatuseschange", KeysChange);
+        // 根据初始化数据生成媒体请求
         return session.generateRequest(ev.initDataType, ev.initData);
-      }, bail(name + " failed to ensure MediaKeys on HTMLMediaElement"))
+      }, fail(name + " failed to ensure MediaKeys on HTMLMediaElement"))
 
-      .then(function() {
+      .then(function () {
+        // 实际在 loadedmetadata 事件触发后调用, 且调用了两次, 因为 encrypted 事件触发了两次
         log(name + " generated request");
-      }, bail(name + " Failed to generate request."));
+      }, fail(name + " Failed to generate request."));
   });
 }

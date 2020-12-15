@@ -93,6 +93,8 @@ limitations under the License.
       var ms = new MediaSource;
 
       var SourceOpen = function (e) {
+        // https://developer.mozilla.org/en-US/docs/Web/API/URL/revokeObjectURL
+        URL.revokeObjectURL(video.src); // 可以在 MediaSource 对象使用完毕后回收 MediaSource 对象, 这样可以节省内存, 避免 Object URL 一直映射引用 MediaSource 对象, 使 MediaSource 对象在程序生命周期内常驻内存/内存泄漏 (因为 video.src 始终可以从 root 遍历到, GC 不会清除其映射的 MediaSource 对象)
         ms.removeEventListener("sourceopen", SourceOpen);
         log("sourceopen");
 
@@ -106,7 +108,7 @@ limitations under the License.
       }
 
       ms.addEventListener("sourceopen", SourceOpen);
-      video.src = URL.createObjectURL(ms);
+      video.src = URL.createObjectURL(ms); // 使用 createObjectURL 将 MediaSource 和 video 媒体元素绑定, 但该绑定是异步的. 因此我们需要在 sourceopen 事件触发时, 底层流 MediaSource 和 video 元素绑定成功后, 使用 revokeObjectURL 方法撤销 Object URL, 也即解除了 Object URL 和 MediaSource 对象之间映射的引用, 让 GC 可以在 MediaSource 对象使用完后就释放
       video.addEventListener("canplay", function (s) { video.play(); });
     }
 
